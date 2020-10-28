@@ -77,7 +77,7 @@ struct signal<void (Args...)> {
 
     ~signal() {
         for (iteration_token* token = current; token; token = token->prev) {
-            token->deleted = true;
+            token->sig = nullptr;
         }
     }
 
@@ -87,33 +87,33 @@ struct signal<void (Args...)> {
 
     struct iteration_token {
         explicit iteration_token(signal const* sig)
-            : prev(sig->current)
-            , it(sig->connections.begin())
-            , deleted(false) {
+            : sig(sig)
+            , prev(sig->current)
+            , it(sig->connections.begin()) {
             sig->current = this;
         }
 
+        ~iteration_token() {
+            if (sig) {
+                sig->current = prev;
+            }
+        }
+
+        signal const* sig;
         iteration_token* prev;
         typename connections_t::const_iterator it;
-        bool deleted;
     };
 
     void operator()(Args... args) const {
         iteration_token token(this);
-        try {
-            while (current->it != connections.end()) {
-                auto copy = current->it;
-                ++current->it;
-                copy->slot(args...);
-                if (token.deleted) {
-                    return;
-                }
+        while (current->it != connections.end()) {
+            auto copy = current->it;
+            ++current->it;
+            copy->slot(args...);
+            if (!token.sig) {
+                return;
             }
-        } catch (...) {
-            current = token.prev;
-            throw;
         }
-        current = token.prev;
     }
 
  private:
